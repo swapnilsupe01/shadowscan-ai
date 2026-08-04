@@ -71,6 +71,7 @@ class ReconSession:
         
     def save_state(self):
         self.state["last_updated"] = get_timestamp()
+        os.makedirs(self.session_folder, exist_ok=True)
         with open(self.state_file, "w") as f:
             json.dump(self.state, f, indent=2)
     
@@ -78,6 +79,7 @@ class ReconSession:
         """Save results to a file in the given session directory."""
         filepath = os.path.join(directory, filename)
         try:
+            os.makedirs(directory, exist_ok=True)
             with open(filepath, "w", encoding="utf-8") as f:
                 if isinstance(data, (dict, list)):
                     json.dump(data, f, indent=2)
