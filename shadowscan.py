@@ -6,7 +6,9 @@ ShadowScan AI - Main Orchestrator CLI
 import sys
 import os
 import json
+import time
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Import modules
 from guardrails.auth_check import check_authorization
@@ -88,8 +90,33 @@ def print_banner():
 """
     print(banner)
 
+def run_parallel(tasks, max_workers=4):
+    """
+    Run multiple tasks in parallel using ThreadPoolExecutor.
+    tasks: list of (name, function, args) tuples.
+    Returns dict of {name: result}.
+    """
+    results = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_map = {}
+        for name, func, args in tasks:
+            future = executor.submit(func, *args)
+            future_map[future] = name
+        
+        for future in as_completed(future_map):
+            name = future_map[future]
+            try:
+                results[name] = future.result()
+                print(f"\033[1;32m[✔] Phase completed: {name}\033[0m")
+            except Exception as e:
+                print(f"\033[1;31m[X] Phase failed: {name} — {e}\033[0m")
+                results[name] = None
+    
+    return results
+
 def main():
     print_banner()
+    start_time = time.time()
     
     if len(sys.argv) < 2:
         print("[!] Usage: python shadowscan.py <target_domain>")
@@ -104,51 +131,87 @@ def main():
     session = ReconSession(target)
     print(f"[*] Session started in: {session.session_folder}")
     
-    # 3. OSINT & Passive DNS
-    osint_data = gather_osint(target)
+    # ── PHASE 1: OSINT + Subdomain Discovery (parallel) ──────────────
+    print(f"\n\033[1;36m{'═'*60}")
+    print("  PHASE 1: OSINT & Subdomain Discovery (parallel)")
+    print(f"{'═'*60}\033[0m\n")
     
-    # 4. Subdomain Discovery
-    subs1 = run_subfinder(target, session.subdomains_dir)
-    subs2 = run_crtsh(target)
+    phase1_tasks = [
+        ("OSINT Gathering", gather_osint, (target,)),
+        ("Subfinder Scan", run_subfinder, (target, session.subdomains_dir)),
+        ("crt.sh Lookup", run_crtsh, (target,)),
+    ]
+    phase1_results = run_parallel(phase1_tasks, max_workers=3)
+    
+    subs1 = phase1_results.get("Subfinder Scan") or []
+    subs2 = phase1_results.get("crt.sh Lookup") or []
     all_subs = sorted(list(set([target] + subs1 + subs2)))
     session.state["subdomains"] = all_subs
     session.save_state()
+    print(f"\n[✔] Total unique subdomains discovered: {len(all_subs)}")
     
-    # 5. DNS validations
-    for sub in all_subs[:10]: # Limit for demo speed
-        resolve_dns_records(sub)
-        
-    # 6. Live Host Filtering & Screen Capture
-    live_urls = check_live(all_subs[:20]) # Validate subset
+    # ── PHASE 2: DNS + Live Hosts (parallel) ─────────────────────────
+    print(f"\n\033[1;36m{'═'*60}")
+    print("  PHASE 2: DNS Validation & Live Host Detection (parallel)")
+    print(f"{'═'*60}\033[0m\n")
+    
+    dns_tasks = [("DNS: " + sub, resolve_dns_records, (sub,)) for sub in all_subs[:5]]
+    run_parallel(dns_tasks, max_workers=5)
+    
+    live_urls = check_live(all_subs[:10])
     session.state["live_hosts"] = live_urls
     session.save_state()
+    print(f"[✔] Live hosts found: {len(live_urls)}")
     
-    capture_screenshots(live_urls, session.screenshots_dir)
+    # ── PHASE 3: Screenshots + SSL + Fingerprint + Takeover (parallel)
+    print(f"\n\033[1;36m{'═'*60}")
+    print("  PHASE 3: Screenshots, SSL, Fingerprint, Takeover (parallel)")
+    print(f"{'═'*60}\033[0m\n")
     
-    # 7. SSL Scanning
-    scan_ssl(all_subs[:3], session.ssl_dir)
+    phase3_tasks = [
+        ("Screenshots", capture_screenshots, (live_urls, session.screenshots_dir)),
+        ("SSL Scanning", scan_ssl, (all_subs[:2], session.ssl_dir)),
+        ("Tech Fingerprint", fingerprint_technology, (live_urls,)),
+        ("Takeover Detection", detect_subdomain_takeover, (all_subs[:10], session.takeover_dir)),
+    ]
+    run_parallel(phase3_tasks, max_workers=4)
     
-    # 8. Tech Fingerprinting & Subdomain Takeovers
-    fingerprint_technology(live_urls)
-    detect_subdomain_takeover(all_subs, session.takeover_dir)
+    # ── PHASE 4: Port Scan + Nuclei Vuln Scan (parallel) ─────────────
+    print(f"\n\033[1;36m{'═'*60}")
+    print("  PHASE 4: Port Scanning & Vulnerability Detection (parallel)")
+    print(f"{'═'*60}\033[0m\n")
     
-    # 9. Port Scanner
-    open_ports = scan_ports(all_subs[:5])
+    phase4_tasks = [
+        ("Port Scanner", scan_ports, (all_subs[:3],)),
+        ("Nuclei CVE Scan", run_nuclei_vuln_scan, (all_subs[:3], session.vuln_dir)),
+    ]
+    phase4_results = run_parallel(phase4_tasks, max_workers=2)
+    
+    open_ports = phase4_results.get("Port Scanner") or {}
     session.state["open_ports"] = open_ports
     session.save_state()
     
-    # 10. Vulnerability/CVE Scanner
-    run_nuclei_vuln_scan(all_subs[:5], session.vuln_dir)
+    # ── PHASE 5: AI Analysis & Report (sequential) ───────────────────
+    print(f"\n\033[1;36m{'═'*60}")
+    print("  PHASE 5: AI Analysis & Report Generation")
+    print(f"{'═'*60}\033[0m\n")
     
-    # 11. AI Analysis & Report Generation
     ai_insights = analyze_vulnerabilities(session.state)
     
     report_path = os.path.join("reports", f"report_{target}_{get_timestamp()}.html")
     generate_html_report(session.state, ai_insights, report_path)
     
-    print("====================================================")
-    print(f"[✔] Scan complete. Final report: {report_path}")
-    print("====================================================")
+    # ── DONE ─────────────────────────────────────────────────────────
+    elapsed = time.time() - start_time
+    minutes = int(elapsed // 60)
+    seconds = int(elapsed % 60)
+    
+    print(f"\n\033[1;32m{'═'*60}")
+    print(f"  [✔] SCAN COMPLETE — Total time: {minutes}m {seconds}s")
+    print(f"  [✔] Report saved: {report_path}")
+    print(f"  [✔] Session data: {session.session_folder}")
+    print(f"{'═'*60}\033[0m\n")
 
 if __name__ == "__main__":
     main()
+
