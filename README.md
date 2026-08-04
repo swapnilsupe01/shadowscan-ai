@@ -44,7 +44,7 @@ shadowscan-ai/
 ## Requirements
 - **Operating System**: Kali Linux (recommended) or any Debian-based Linux distribution.
 - **Python**: Version 3.8 or higher.
-- **Local LLM Engine**: Ollama (configured with the `llama3.1` model).
+- **Local LLM Engine** *(optional)*: Ollama (configured with a model like `llama3`). Only required if you want AI-powered analysis — use `--no-ai` to skip.
 - **Core Utilities**: `git`, `python3-pip`, `python3-venv`, `chromium` (or `google-chrome`).
 
 ## Installation
@@ -60,21 +60,55 @@ chmod +x setup.sh
 sudo ./setup.sh
 ```
 
-Ensure Ollama is installed and run the local `llama3.1` model:
+*(Optional)* If you want AI-powered security analysis, install Ollama and pull a model:
 ```bash
 # Install Ollama
 curl -fsSL https://ollama.com/install.sh | sh
 
-# Pull Llama 3.1 model
-ollama pull llama3.1
+# Pull a model (e.g., llama3)
+ollama pull llama3
 ```
+> **Note:** You can skip this entirely and use `--no-ai` flag when running scans.
 
 ## Usage
-To execute the complete reconnaissance and vulnerability scanning workflow:
+
+### Basic Scan (with AI — requires Ollama running)
 ```bash
-python3 shadowscan.py <target_domain>
+python3 shadowscan.py example.com
 ```
-*Note: Make sure your Ollama service is active and running in the background before initiating the scan.*
+
+### Scan Without AI (no Ollama needed)
+```bash
+python3 shadowscan.py example.com --no-ai
+```
+
+### Fast Recon Mode (skips screenshots, SSL, and AI for quicker results)
+```bash
+python3 shadowscan.py example.com --fast
+```
+
+### Use a Different AI Model
+```bash
+python3 shadowscan.py example.com --ai-model mistral
+```
+
+### Scan More Subdomains
+```bash
+python3 shadowscan.py example.com --max-subs 100
+```
+
+### CLI Options Reference
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `target` | *(required)* | Target domain to scan |
+| `--no-ai` | `False` | Skip Ollama AI analysis entirely (no LLM needed) |
+| `--fast` | `False` | Fast mode — skips screenshots, SSL scanning, and AI analysis |
+| `--ai-model` | `llama3` | Specify which Ollama model to use for AI analysis |
+| `--ai-timeout` | `120` | Timeout in seconds for AI/LLM response |
+| `--max-subs` | `50` | Maximum number of subdomains to process per phase |
+
+> **Tip:** Use `--fast` for quick reconnaissance during initial scoping, then run a full scan (with or without `--no-ai`) for detailed results.
 
 ## Main Menu / Workflow
 When executing `shadowscan.py`, the orchestrator moves through the following pipeline:
@@ -92,6 +126,7 @@ When executing `shadowscan.py`, the orchestrator moves through the following pip
 12. **Report Generation**: Emits a single HTML report file inside the `reports/` folder.
 
 ## Notes & Limitations
-- **Scanning Thresholds**: By default, ShadowScan AI implements query limiting (e.g., scanning only the top discovered subdomains) to ensure swift execution times during demos. You can scale these counts directly in `shadowscan.py`.
+- **Scanning Thresholds**: By default, ShadowScan AI processes up to 50 subdomains per phase. Adjust with `--max-subs` to scan more or fewer.
+- **AI is Optional**: Use `--no-ai` or `--fast` to run scans without Ollama. No LLM setup required for recon-only workflows.
 - **System Permissions**: Some system installation fallbacks (like writing to `/usr/local/bin` or running `apt`) require root or `sudo` privileges.
-- **Resource Usage**: Running a local LLM via Ollama can be resource-intensive. A minimum of 8GB system RAM (16GB recommended) is advised for running the `llama3.1:8b` model smoothly.
+- **Resource Usage**: Running a local LLM via Ollama can be resource-intensive. A minimum of 8GB system RAM (16GB recommended) is advised for running the `llama3:8b` model smoothly.
