@@ -1,7 +1,7 @@
 import urllib.request
 import json
 
-def analyze_vulnerabilities(recon_data, model_name="llama3"):
+def analyze_vulnerabilities(recon_data, model_name="llama3.1:8b"):
     """
     Sends findings to local Ollama LLM for intelligent security analysis.
     """
@@ -24,7 +24,7 @@ def analyze_vulnerabilities(recon_data, model_name="llama3"):
     try:
         data = json.dumps(payload).encode('utf-8')
         req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
-        with urllib.request.urlopen(req, timeout=60) as response:
+        with urllib.request.urlopen(req, timeout=180) as response:
             res = json.loads(response.read().decode('utf-8'))
             analysis = res.get('response', '')
             print("[✔] AI Analysis completed.")
