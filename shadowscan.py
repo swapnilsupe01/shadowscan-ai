@@ -44,9 +44,16 @@ class ReconSession:
         self.vuln_dir = os.path.join(self.session_folder, "06_vulnerabilities")
         self.fuzz_dir = os.path.join(self.session_folder, "07_fuzzing")
         self.takeover_dir = os.path.join(self.session_folder, "08_takeover")
+        self.ai_dir = os.path.join(self.session_folder, "09_ai_analysis")
+        self.osint_dir = os.path.join(self.session_folder, "10_osint")
+        self.ports_dir = os.path.join(self.session_folder, "11_ports")
+        self.fingerprint_dir = os.path.join(self.session_folder, "12_fingerprint")
         
         # Create dirs
-        for d in [self.subdomains_dir, self.dns_dir, self.live_hosts_dir, self.screenshots_dir, self.ssl_dir, self.vuln_dir, self.fuzz_dir, self.takeover_dir, "reports"]:
+        for d in [self.subdomains_dir, self.dns_dir, self.live_hosts_dir,
+                  self.screenshots_dir, self.ssl_dir, self.vuln_dir,
+                  self.fuzz_dir, self.takeover_dir, self.ai_dir,
+                  self.osint_dir, self.ports_dir, self.fingerprint_dir, "reports"]:
             os.makedirs(d, exist_ok=True)
             
         self.state_file = os.path.join(self.session_folder, "session_state.json")
@@ -56,6 +63,8 @@ class ReconSession:
             "live_hosts": [],
             "open_ports": {},
             "technologies": {},
+            "osint": {},
+            "dns_records": {},
             "completed_phases": [],
             "last_updated": self.timestamp
         }
@@ -64,6 +73,19 @@ class ReconSession:
         self.state["last_updated"] = get_timestamp()
         with open(self.state_file, "w") as f:
             json.dump(self.state, f, indent=2)
+    
+    def save_results(self, directory, filename, data):
+        """Save results to a file in the given session directory."""
+        filepath = os.path.join(directory, filename)
+        try:
+            with open(filepath, "w", encoding="utf-8") as f:
+                if isinstance(data, (dict, list)):
+                    json.dump(data, f, indent=2)
+                else:
+                    f.write(str(data))
+            print(f"    [💾] Saved: {filepath}")
+        except Exception as e:
+            print(f"    [!] Failed to save {filepath}: {e}")
 
 def print_banner():
     banner = """
@@ -147,6 +169,16 @@ def main():
     subs2 = phase1_results.get("crt.sh Lookup") or []
     all_subs = sorted(list(set([target] + subs1 + subs2)))
     session.state["subdomains"] = all_subs
+    
+    # Save OSINT results
+    osint_data = phase1_results.get("OSINT Gathering") or {}
+    session.state["osint"] = osint_data
+    session.save_results(session.osint_dir, "osint_results.json", osint_data)
+    
+    # Save all subdomains to file
+    session.save_results(session.subdomains_dir, "all_subdomains.txt", "\n".join(all_subs))
+    session.save_results(session.subdomains_dir, "crtsh_subdomains.txt", "\n".join(subs2))
+    session.save_results(session.subdomains_dir, "subfinder_subdomains.txt", "\n".join(subs1))
     session.save_state()
     print(f"\n[✔] Total unique subdomains discovered: {len(all_subs)}")
     
@@ -156,10 +188,22 @@ def main():
     print(f"{'═'*60}\033[0m\n")
     
     dns_tasks = [("DNS: " + sub, resolve_dns_records, (sub,)) for sub in all_subs[:5]]
-    run_parallel(dns_tasks, max_workers=5)
+    dns_results = run_parallel(dns_tasks, max_workers=5)
+    
+    # Save DNS results
+    all_dns = {}
+    for name, result in dns_results.items():
+        domain = name.replace("DNS: ", "")
+        if result:
+            all_dns[domain] = result
+    session.state["dns_records"] = all_dns
+    session.save_results(session.dns_dir, "dns_records.json", all_dns)
     
     live_urls = check_live(all_subs[:10])
     session.state["live_hosts"] = live_urls
+    
+    # Save live hosts to file
+    session.save_results(session.live_hosts_dir, "live_hosts.txt", "\n".join(live_urls))
     session.save_state()
     print(f"[✔] Live hosts found: {len(live_urls)}")
     
@@ -174,7 +218,13 @@ def main():
         ("Tech Fingerprint", fingerprint_technology, (live_urls,)),
         ("Takeover Detection", detect_subdomain_takeover, (all_subs[:10], session.takeover_dir)),
     ]
-    run_parallel(phase3_tasks, max_workers=4)
+    phase3_results = run_parallel(phase3_tasks, max_workers=4)
+    
+    # Save fingerprint/technology results
+    tech_data = phase3_results.get("Tech Fingerprint") or {}
+    session.state["technologies"] = tech_data
+    session.save_results(session.fingerprint_dir, "technologies.json", tech_data)
+    session.save_state()
     
     # ── PHASE 4: Port Scan + Nuclei Vuln Scan (parallel) ─────────────
     print(f"\n\033[1;36m{'═'*60}")
@@ -189,6 +239,9 @@ def main():
     
     open_ports = phase4_results.get("Port Scanner") or {}
     session.state["open_ports"] = open_ports
+    
+    # Save port scan results
+    session.save_results(session.ports_dir, "open_ports.json", open_ports)
     session.save_state()
     
     # ── PHASE 5: AI Analysis & Report (sequential) ───────────────────
@@ -197,6 +250,9 @@ def main():
     print(f"{'═'*60}\033[0m\n")
     
     ai_insights = analyze_vulnerabilities(session.state)
+    
+    # Save AI analysis to file
+    session.save_results(session.ai_dir, "ai_analysis.md", ai_insights)
     
     report_path = os.path.join("reports", f"report_{target}_{get_timestamp()}.html")
     generate_html_report(session.state, ai_insights, report_path)
