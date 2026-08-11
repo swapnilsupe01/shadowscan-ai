@@ -9,7 +9,7 @@ echo "=========================================="
 sudo apt update -y
 
 # Install system dependencies
-sudo apt install -y python3-pip python3-venv subfinder testssl.sh chromium-driver whatweb nuclei
+sudo apt install -y python3-pip python3-venv subfinder testssl.sh chromium chromium-driver whatweb nuclei
 
 # Install Python packages
 pip3 install -r requirements.txt --break-system-packages
