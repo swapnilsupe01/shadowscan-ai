@@ -122,6 +122,32 @@ def generate_html_report(recon_data, ai_findings, output_path):
                 takeover_items.append(f"<div class='vuln-alert critical'><strong>Subdomain Takeover Alert:</strong><pre>{html.escape(str(item))}</pre></div>")
     takeover_html = "".join(takeover_items) if takeover_items else "<p class='empty-msg'>No subdomain takeover vulnerabilities detected.</p>"
 
+    # Format Vulnerabilities & Security Audits HTML
+    vuln_rows = []
+    native_audit = cve_vulns.get('native_audit', {}) if isinstance(cve_vulns, dict) else {}
+    nuclei_output = cve_vulns.get('nuclei_output', '') if isinstance(cve_vulns, dict) else ''
+    
+    if native_audit:
+        for host, audit in native_audit.items():
+            if isinstance(audit, dict):
+                missing = audit.get('missing_headers', [])
+                info_disc = audit.get('information_disclosure', [])
+                misconfig = audit.get('misconfigurations', [])
+                
+                issues = []
+                for item in missing:
+                    issues.append(f"<span class='badge port-badge' style='background:rgba(251,191,36,0.15);color:var(--warning);border-color:rgba(251,191,36,0.3);'>Missing {html.escape(item['header'])}</span>")
+                for item in info_disc:
+                    issues.append(f"<span class='badge port-badge' style='background:rgba(56,189,248,0.15);color:var(--primary);'>{html.escape(item['header'])}: {html.escape(str(item['value']))}</span>")
+                for item in misconfig:
+                    issues.append(f"<span class='badge port-badge' style='background:rgba(244,63,94,0.15);color:var(--danger);'>{html.escape(item['type'])}</span>")
+                    
+                issues_html = " ".join(issues) if issues else "<span class='empty-msg'>No header issues found.</span>"
+                vuln_rows.append(f"<tr><td><strong>{html.escape(host)}</strong></td><td>{issues_html}</td></tr>")
+                
+    vuln_table_html = "".join(vuln_rows) if vuln_rows else "<tr><td colspan='2' class='empty-msg'>No security header vulnerabilities detected.</td></tr>"
+    nuclei_html = f"<pre>{html.escape(nuclei_output)}</pre>" if nuclei_output.strip() else "<p class='empty-msg'>No CVEs or high-severity vulnerabilities detected by Nuclei scan.</p>"
+
     # AI Insights formatting
     ai_html = html.escape(ai_findings).replace("\n", "<br>")
 
@@ -313,6 +339,21 @@ def generate_html_report(recon_data, ai_findings, output_path):
         <div class="card">
             <h2>⚠️ Subdomain Takeover Vulnerability Audits</h2>
             {takeover_html}
+        </div>
+
+        <!-- Vulnerabilities & Security Audits -->
+        <div class="card">
+            <h2>🛡️ Security Header & Vulnerability Audits (06_vulnerabilities)</h2>
+            <table>
+                <thead>
+                    <tr><th>Host</th><th>Header & Configuration Audits</th></tr>
+                </thead>
+                <tbody>
+                    {vuln_table_html}
+                </tbody>
+            </table>
+            <h3 style="font-size: 1rem; color: var(--primary); margin-top: 16px; margin-bottom: 8px;">Nuclei Vulnerability Scan Results</h3>
+            {nuclei_html}
         </div>
 
         <!-- Discovered Subdomains -->

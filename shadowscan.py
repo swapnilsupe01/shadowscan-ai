@@ -270,8 +270,9 @@ def main():
     fuzz_data = phase4_results.get("Endpoint Fuzzing") or {}
     session.state["fuzzing"] = fuzz_data
     
-    # Save port scan results
+    # Save port scan & vulnerability audit results
     session.save_results(session.ports_dir, "open_ports.json", open_ports)
+    session.save_results(session.vuln_dir, "vulnerabilities.json", cve_data)
     session.save_state()
     
     # ── PHASE 5: AI Analysis & Report (sequential) ───────────────────
