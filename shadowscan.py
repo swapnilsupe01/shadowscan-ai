@@ -10,6 +10,8 @@ import time
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+#import argparse
+
 # Import modules
 from guardrails.auth_check import check_authorization
 from modules.subdomains import run_subfinder, run_crtsh
@@ -22,6 +24,7 @@ from modules.takeover import detect_subdomain_takeover
 from modules.port_scanner import scan_ports
 from modules.osint import gather_osint
 from modules.cve_scanner import run_nuclei_vuln_scan
+from modules.fuzzer import run_directory_fuzzing
 from modules.ai_analyzer import analyze_vulnerabilities
 from modules.report_gen import generate_html_report
 
@@ -65,6 +68,11 @@ class ReconSession:
             "technologies": {},
             "osint": {},
             "dns_records": {},
+            "screenshots": {},
+            "ssl_certificates": {},
+            "fuzzing": {},
+            "takeover": [],
+            "cve_vulnerabilities": {},
             "completed_phases": [],
             "last_updated": self.timestamp
         }
@@ -142,11 +150,14 @@ def main():
     print_banner()
     start_time = time.time()
     
-    if len(sys.argv) < 2:
-        print("[!] Usage: python shadowscan.py <target_domain>")
-        sys.exit(1)
-        
-    target = sys.argv[1].strip()
+    parser = argparse.ArgumentParser(description="ShadowScan AI - Attack Surface Recon & Vulnerability Analyzer")
+    parser.add_argument("target", help="Target domain (e.g. example.com)")
+    parser.add_argument("--no-ai", action="store_true", help="Disable Ollama AI vulnerability analysis")
+    parser.add_argument("--ai-model", default="llama3.1:8b", help="Specify local Ollama model (default: llama3.1:8b)")
+    parser.add_argument("--max-workers", type=int, default=4, help="Max thread pool workers for parallel scanning")
+    args = parser.parse_args()
+    
+    target = args.target.strip()
     
     # 1. Guardrail
     check_authorization(target)
@@ -165,7 +176,7 @@ def main():
         ("Subfinder Scan", run_subfinder, (target, session.subdomains_dir)),
         ("crt.sh Lookup", run_crtsh, (target,)),
     ]
-    phase1_results = run_parallel(phase1_tasks, max_workers=3)
+    phase1_results = run_parallel(phase1_tasks, max_workers=min(args.max_workers, 3))
     
     subs1 = phase1_results.get("Subfinder Scan") or []
     subs2 = phase1_results.get("crt.sh Lookup") or []
@@ -190,7 +201,7 @@ def main():
     print(f"{'═'*60}\033[0m\n")
     
     dns_tasks = [("DNS: " + sub, resolve_dns_records, (sub,)) for sub in all_subs[:5]]
-    dns_results = run_parallel(dns_tasks, max_workers=5)
+    dns_results = run_parallel(dns_tasks, max_workers=min(args.max_workers, 5))
     
     # Save DNS results
     all_dns = {}
@@ -220,12 +231,65 @@ def main():
         ("Tech Fingerprint", fingerprint_technology, (live_urls,)),
         ("Takeover Detection", detect_subdomain_takeover, (all_subs[:10], session.takeover_dir)),
     ]
-    phase3_results = run_parallel(phase3_tasks, max_workers=4)
+    phase3_results = run_parallel(phase3_tasks, max_workers=min(args.max_workers, 4))
     
-    # Save fingerprint/technology results
+    # Save phase 3 results into state
+    screenshots_data = phase3_results.get("Screenshots") or {}
+    session.state["screenshots"] = screenshots_data
+    session.save_results(session.screenshots_dir, "screenshots_manifest.json", screenshots_data)
+    
+    ssl_data = phase3_results.get("SSL Scanning") or {}
+    session.state["ssl_certificates"] = ssl_data
+    
     tech_data = phase3_results.get("Tech Fingerprint") or {}
     session.state["technologies"] = tech_data
     session.save_results(session.fingerprint_dir, "technologies.json", tech_data)
+    
+    takeover_data = phase3_results.get("Takeover Detection") or []
+    session.state["takeover"] = takeover_data
+    session.save_state()
+    
+    # ── PHASE 4: Port Scan + Nuclei Vuln + Fuzzing (parallel) ────────
+    print(f"\n\033[1;36m{'═'*60}")
+    print("  PHASE 4: Port Scanning, Vulnerability & Endpoint Fuzzing (parallel)")
+    print(f"{'═'*60}\033[0m\n")
+    
+    phase4_tasks = [
+        ("Port Scanner", scan_ports, (all_subs[:3],)),
+        ("Nuclei CVE Scan", run_nuclei_vuln_scan, (all_subs[:3], session.vuln_dir)),
+        ("Endpoint Fuzzing", run_directory_fuzzing, (live_urls[:5] if live_urls else all_subs[:3], session.fuzz_dir)),
+    ]
+    phase4_results = run_parallel(phase4_tasks, max_workers=min(args.max_workers, 3))
+    
+    open_ports = phase4_results.get("Port Scanner") or {}
+    session.state["open_ports"] = open_ports
+    
+    cve_data = phase4_results.get("Nuclei CVE Scan") or {}
+    session.state["cve_vulnerabilities"] = cve_data
+
+    fuzz_data = phase4_results.get("Endpoint Fuzzing") or {}
+    session.state["fuzzing"] = fuzz_data
+    
+    # Save port scan results
+    session.save_results(session.ports_dir, "open_ports.json", open_ports)
+    session.save_state()
+    
+    # ── PHASE 5: AI Analysis & Report (sequential) ───────────────────
+    print(f"\n\033[1;36m{'═'*60}")
+    print("  PHASE 5: AI Analysis & Report Generation")
+    print(f"{'═'*60}\033[0m\n")
+    
+    if args.no_ai:
+        ai_insights = "AI analysis skipped by user (--no-ai flag supplied)."
+        print("[*] Skipping AI Analysis (--no-ai flag provided).")
+    else:
+        ai_insights = analyze_vulnerabilities(session.state, model_name=args.ai_model)
+    
+    # Save AI analysis to file
+    session.save_results(session.ai_dir, "ai_analysis.md", ai_insights)
+    
+    report_path = os.path.join("reports", f"report_{target}_{get_timestamp()}.html")
+    generate_html_report(session.state, ai_insights, report_path)sults(session.fingerprint_dir, "technologies.json", tech_data)
     session.save_state()
     
     # ── PHASE 4: Port Scan + Nuclei Vuln Scan (parallel) ─────────────
