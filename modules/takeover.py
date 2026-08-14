@@ -1,5 +1,6 @@
 import os
 import json
+import ssl
 import socket
 import urllib.request
 import urllib.error
@@ -90,11 +91,12 @@ def check_cname_takeover_python(domain, timeout=4.0):
     # Verify HTTP error fingerprint signature
     is_vulnerable = False
     http_response = ""
+    ssl_context = ssl._create_unverified_context()
     for proto in ["https://", "http://"]:
         url = f"{proto}{clean_domain}"
         try:
             req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (ShadowScan AI Takeover Scanner)'})
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with urllib.request.urlopen(req, timeout=timeout, context=ssl_context) as resp:
                 body = resp.read().decode('utf-8', errors='ignore')
                 for fp in matched_sig["fingerprint"]:
                     if fp.lower() in body.lower():

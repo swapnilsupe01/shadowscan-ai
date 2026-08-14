@@ -1,4 +1,5 @@
 import urllib.request
+import ssl
 import json
 import shutil
 import subprocess
@@ -10,6 +11,7 @@ def fingerprint_technology(urls):
     """
     tech_results = {}
     whatweb_path = shutil.which("whatweb")
+    ssl_context = ssl._create_unverified_context()
     
     for url in urls:
         tech_results[url] = []
@@ -28,7 +30,7 @@ def fingerprint_technology(urls):
         # Basic fallback matching via HTTP headers
         try:
             req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=5) as response:
+            with urllib.request.urlopen(req, timeout=5, context=ssl_context) as response:
                 headers = response.info()
                 server = headers.get('Server', '')
                 powered_by = headers.get('X-Powered-By', '')

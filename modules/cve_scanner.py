@@ -1,5 +1,6 @@
 import os
 import json
+import ssl
 import urllib.request
 import urllib.error
 import subprocess
@@ -26,9 +27,11 @@ def audit_http_security_headers(url, timeout=5.0):
         "Permissions-Policy": "Permissions-Policy header missing."
     }
     
+    ssl_context = ssl._create_unverified_context()
+    
     try:
         req = urllib.request.Request(target_url, headers={'User-Agent': 'Mozilla/5.0 (ShadowScan AI Security Auditor)'})
-        with urllib.request.urlopen(req, timeout=timeout) as response:
+        with urllib.request.urlopen(req, timeout=timeout, context=ssl_context) as response:
             headers = {k.title(): v for k, v in response.headers.items()}
             
             # Check missing headers

@@ -289,38 +289,6 @@ def main():
     session.save_results(session.ai_dir, "ai_analysis.md", ai_insights)
     
     report_path = os.path.join("reports", f"report_{target}_{get_timestamp()}.html")
-    generate_html_report(session.state, ai_insights, report_path)sults(session.fingerprint_dir, "technologies.json", tech_data)
-    session.save_state()
-    
-    # ── PHASE 4: Port Scan + Nuclei Vuln Scan (parallel) ─────────────
-    print(f"\n\033[1;36m{'═'*60}")
-    print("  PHASE 4: Port Scanning & Vulnerability Detection (parallel)")
-    print(f"{'═'*60}\033[0m\n")
-    
-    phase4_tasks = [
-        ("Port Scanner", scan_ports, (all_subs[:3],)),
-        ("Nuclei CVE Scan", run_nuclei_vuln_scan, (all_subs[:3], session.vuln_dir)),
-    ]
-    phase4_results = run_parallel(phase4_tasks, max_workers=2)
-    
-    open_ports = phase4_results.get("Port Scanner") or {}
-    session.state["open_ports"] = open_ports
-    
-    # Save port scan results
-    session.save_results(session.ports_dir, "open_ports.json", open_ports)
-    session.save_state()
-    
-    # ── PHASE 5: AI Analysis & Report (sequential) ───────────────────
-    print(f"\n\033[1;36m{'═'*60}")
-    print("  PHASE 5: AI Analysis & Report Generation")
-    print(f"{'═'*60}\033[0m\n")
-    
-    ai_insights = analyze_vulnerabilities(session.state)
-    
-    # Save AI analysis to file
-    session.save_results(session.ai_dir, "ai_analysis.md", ai_insights)
-    
-    report_path = os.path.join("reports", f"report_{target}_{get_timestamp()}.html")
     generate_html_report(session.state, ai_insights, report_path)
     
     # ── DONE ─────────────────────────────────────────────────────────

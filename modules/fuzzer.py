@@ -1,5 +1,6 @@
 import os
 import json
+import ssl
 import urllib.request
 import urllib.error
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -34,10 +35,11 @@ def check_endpoint(base_url, path, timeout=4.0):
         
     url = f"{base_url.rstrip('/')}/{path.lstrip('/')}"
     result = None
+    ssl_context = ssl._create_unverified_context()
     
     try:
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (ShadowScan AI Fuzzer)'})
-        with urllib.request.urlopen(req, timeout=timeout) as response:
+        with urllib.request.urlopen(req, timeout=timeout, context=ssl_context) as response:
             status = response.status
             size = len(response.read(2048)) # sample size
             result = {
